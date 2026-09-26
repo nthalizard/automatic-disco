@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0E1116"/>
+  <!-- stationary shaft + body -->
+  <rect x="296" y="196" width="150" height="150" rx="18" fill="#1C232C" stroke="#2A333F" stroke-width="6"/>
+  <line x1="262" y1="256" x2="330" y2="256" stroke="#8C99AB" stroke-width="22" stroke-linecap="round"/>
+  <!-- movable shaft, slightly misaligned -->
+  <rect x="66" y="176" width="150" height="150" rx="18" fill="#1C232C" stroke="#2A333F" stroke-width="6" transform="rotate(-6 141 251)"/>
+  <line x1="120" y1="262" x2="244" y2="243" stroke="#6FA8DC" stroke-width="22" stroke-linecap="round"/>
+  <!-- laser -->
+  <line x1="96" y1="138" x2="420" y2="138" stroke="#FF4436" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="420" cy="138" r="14" fill="#FF4436"/>
+  <!-- coupling gap -->
+  <line x1="253" y1="200" x2="253" y2="312" stroke="#E0A458" stroke-width="6" stroke-dasharray="14 10"/>
+</svg>

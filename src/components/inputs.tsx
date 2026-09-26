@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
-
-/** A signed reading as typed: magnitude text plus which direction button is selected. */
-export interface SignedReading { mag: string; pos: boolean }
+import type { SignedReading } from "../state/job";
 
 export function Panel({ title, hint, right, children }: { title: string; hint?: string; right?: ReactNode; children: ReactNode }) {
   return (

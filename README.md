@@ -4,6 +4,20 @@ Gap & offset (laser) shaft alignment calculator: enter as-found readings for the
 machine, get foot corrections (shims and horizontal moves), an alignment view, and a
 speed-based tolerance check.
 
+- **Saved jobs** — every job auto-saves in the browser on the device you're using. Tap the
+  job name to switch jobs; **Duplicate** a job to record as-left readings next to as-found.
+- **Export / Import** — download one job or all jobs as a `.json` file (a backup, or to move
+  jobs to another device), and load them back. Importing never overwrites a newer edit.
+- **Report** — prints a one-page report (readings, tolerance, foot moves, drawings, notes,
+  sign-off lines). Choose **Save as PDF** in the print dialog; on iPhone/iPad use
+  Share → Print, then Share again from the preview.
+- **Offline / install** — after the first visit the app works with no connection. Install
+  it from the browser (Chrome/Edge: install icon in the address bar; iPhone Safari:
+  Share → Add to Home Screen; Android Chrome: menu → Install app).
+
+> Jobs live in *this browser's* storage — not synced between devices, and cleared if you
+> clear site data. Use **Export all** regularly to keep a backup file.
+
 ## Run it
 
 Requires [Node.js](https://nodejs.org) 20 or newer. In PowerShell (or any terminal):
@@ -35,7 +49,10 @@ src/
     units.ts        thou/in ↔ mm conversions
     format.ts       number parsing and formatting
     *.test.ts
-  components/     Panel/Field/Reading inputs, Centerline drawing, TolBar, FootRow
+  state/          jobs: model, evaluate (inputs → results), IndexedDB storage,
+                  export/import format, useJobs hook (auto-save)
+  components/     inputs, Centerline drawing, TolBar, FootRow, JobBar, JobsDialog,
+                  JobDetails, Report (print-only)
   App.tsx         screen layout and state
   styles.ts, theme.ts
 ```
