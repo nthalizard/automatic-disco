@@ -1,6 +1,7 @@
 import "fake-indexeddb/auto";
 import { describe, expect, it } from "vitest";
 import { createJob, exampleInputs, exampleMeta } from "./job";
+import { createPreset } from "./presets";
 import { memoryStore, openJobStore, sortJobs } from "./storage";
 
 describe.each([
@@ -24,6 +25,16 @@ describe.each([
 
     await store.remove(a.id);
     expect(await store.list()).toEqual([]);
+  });
+
+  it("saves and removes tolerance presets", async () => {
+    const store = await open();
+    for (const p of await store.listPresets()) await store.removePreset(p.id);
+    const p = createPreset("Site", { excOff: 1, accOff: 2, excAng: 0.1, accAng: 0.2 });
+    await store.putPreset(p);
+    expect(await store.listPresets()).toEqual([p]);
+    await store.removePreset(p.id);
+    expect(await store.listPresets()).toEqual([]);
   });
 });
 

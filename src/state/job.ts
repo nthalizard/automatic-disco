@@ -10,6 +10,12 @@ export interface SignedReading { mag: string; pos: boolean }
 
 export type TolOverride = Partial<Record<TolKey, string>> | null;
 
+/** The four measured values for one set of readings. */
+export interface ReadingSet { voff: SignedReading; vgap: SignedReading; hoff: SignedReading; hgap: SignedReading }
+
+/** Which readings the screen shows: before the moves (as-found) or after (as-left). */
+export type Stage = "found" | "left";
+
 export interface JobInputs {
   unit: Unit;
   D: string; L1: string; Ls: string; dbse: string; rpm: string;
@@ -19,6 +25,11 @@ export interface JobInputs {
   tvoff: SignedReading; tvgap: SignedReading; thoff: SignedReading; thgap: SignedReading;
   /** per-cell tolerance overrides in display units; null = speed-based */
   tol: TolOverride;
+  /** name of the tolerance preset the overrides came from; null = typed by hand */
+  tolSource: string | null;
+  /** as-found readings are voff/vgap/hoff/hgap above; as-left is recorded after the moves */
+  asLeft: ReadingSet | null;
+  stage: Stage;
 }
 
 export interface JobMeta {
@@ -48,8 +59,17 @@ export const blankInputs = (): JobInputs => ({
   voff: zero(), vgap: zero(), hoff: zero(), hgap: zero(),
   hflip: false, showTargets: false,
   tvoff: zero(), tvgap: zero(), thoff: zero(), thgap: zero(),
-  tol: null,
+  tol: null, tolSource: null,
+  asLeft: null, stage: "found",
 });
+
+export const blankReadings = (): ReadingSet => ({ voff: zero(), vgap: zero(), hoff: zero(), hgap: zero() });
+
+/** The readings for a stage (as-left falls back to as-found if none recorded). */
+export function readingsFor(inp: JobInputs, stage: Stage = inp.stage): ReadingSet {
+  if (stage === "left" && inp.asLeft) return inp.asLeft;
+  return { voff: inp.voff, vgap: inp.vgap, hoff: inp.hoff, hgap: inp.hgap };
+}
 
 export const blankMeta = (): JobMeta => ({
   name: "", site: "", technician: "", notes: "", movable: "Movable", stationary: "Stationary",
@@ -95,6 +115,7 @@ export function convertInputs(inp: JobInputs, target: Unit): JobInputs {
     dbse: convertText(inp.dbse, Lf, toMet ? 2 : 3),
     voff: cvR(inp.voff), vgap: cvR(inp.vgap), hoff: cvR(inp.hoff), hgap: cvR(inp.hgap),
     tvoff: cvR(inp.tvoff), tvgap: cvR(inp.tvgap), thoff: cvR(inp.thoff), thgap: cvR(inp.thgap),
-    tol: null,
+    asLeft: inp.asLeft && { voff: cvR(inp.asLeft.voff), vgap: cvR(inp.asLeft.vgap), hoff: cvR(inp.asLeft.hoff), hgap: cvR(inp.asLeft.hgap) },
+    tol: null, tolSource: null,
   };
 }

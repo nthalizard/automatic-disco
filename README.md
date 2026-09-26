@@ -5,8 +5,12 @@ machine, get foot corrections (shims and horizontal moves), an alignment view, a
 speed-based tolerance check.
 
 - **Saved jobs** — every job auto-saves in the browser on the device you're using. Tap the
-  job name to switch jobs; **Duplicate** a job to record as-left readings next to as-found.
-- **Export / Import** — download one job or all jobs as a `.json` file (a backup, or to move
+  job name to switch jobs; **Duplicate** copies a job as a starting point for a similar one.
+- **As-found / as-left** — switch the readings panel to **AS-LEFT** after making the moves
+  to record the final readings in the same job. The report shows both side by side.
+- **Tolerance presets** — type an OEM or site spec into the limit cells and **Save as
+  preset**; pick it under "Limits from" on any job. Presets are included in **Export all**.
+- **Export / Import** — download one job, or all jobs plus presets, as a `.json` file (a backup, or to move
   jobs to another device), and load them back. Importing never overwrites a newer edit.
 - **Report** — prints a one-page report (readings, tolerance, foot moves, drawings, notes,
   sign-off lines). Choose **Save as PDF** in the print dialog; on iPhone/iPad use
@@ -18,7 +22,18 @@ speed-based tolerance check.
 > Jobs live in *this browser's* storage — not synced between devices, and cleared if you
 > clear site data. Use **Export all** regularly to keep a backup file.
 
-## Run it
+## Use it online
+
+After GitHub Pages is switched on (below), the app is at
+**https://nthalizard.github.io/automatic-disco/** — open it on a phone and install it from
+there. Every push to the default branch redeploys it (`.github/workflows/pages.yml`).
+
+One-time setup: repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+GitHub Pages needs the repo to be public on a free account (private repos need GitHub Pro).
+The published site is public either way; it contains only the app — jobs never leave the
+browser they were entered in.
+
+## Run it locally
 
 Requires [Node.js](https://nodejs.org) 20 or newer. In PowerShell (or any terminal):
 
@@ -49,8 +64,8 @@ src/
     units.ts        thou/in ↔ mm conversions
     format.ts       number parsing and formatting
     *.test.ts
-  state/          jobs: model, evaluate (inputs → results), IndexedDB storage,
-                  export/import format, useJobs hook (auto-save)
+  state/          jobs: model (incl. as-left), evaluate (inputs → results), tolerance
+                  presets, IndexedDB storage, export/import format, useJobs hook
   components/     inputs, Centerline drawing, TolBar, FootRow, JobBar, JobsDialog,
                   JobDetails, Report (print-only)
   App.tsx         screen layout and state

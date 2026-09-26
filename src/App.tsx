@@ -13,7 +13,8 @@ import { Report } from "./components/Report";
 import { TolBar } from "./components/TolBar";
 import { evaluate, footCallouts, gapReadout, unitLabels } from "./state/evaluate";
 import { downloadText, exportFileName, parseJobFile, serializeJobs, slug } from "./state/exchange";
-import { convertInputs, type Job, type JobInputs, type JobMeta } from "./state/job";
+import { blankReadings, convertInputs, readingsFor, type Job, type JobInputs, type JobMeta, type ReadingSet, type SignedReading, type Stage } from "./state/job";
+import { createPreset, overrideMatches, presetProblem, presetToOverride, type TolPreset } from "./state/presets";
 import { useJobs } from "./state/useJobs";
 import { css } from "./styles";
 import { C } from "./theme";
@@ -43,29 +44,69 @@ export default function App() {
   const inp = job.inputs, meta = job.meta;
   const set = (patch: Partial<JobInputs>) => J.update((j) => ({ ...j, inputs: { ...j.inputs, ...patch } }));
   const setMeta = (patch: Partial<JobMeta>) => J.update((j) => ({ ...j, meta: { ...j.meta, ...patch } }));
-  const switchUnit = (target: Unit) => J.update((j) => ({ ...j, inputs: convertInputs(j.inputs, target) }));
+  const rs = readingsFor(inp);
+  const onLeft = inp.stage === "left" && inp.asLeft !== null;
+  const setReading = (k: keyof ReadingSet) => (r: SignedReading) =>
+    onLeft ? set({ asLeft: { ...inp.asLeft!, [k]: r } }) : set({ [k]: r });
+  const setStage = (st: Stage) => set(st === "left" && !inp.asLeft ? { stage: st, asLeft: blankReadings() } : { stage: st });
+  const clearAsLeft = () => {
+    if (window.confirm("Remove the as-left readings from this job?")) set({ asLeft: null, stage: "found" });
+  };
+  const stageName = onLeft ? "as-left" : "as-found";
+
 
   const { R, auto, lim, gr, overall } = evaluate(inp);
   const { met, uLen, uSm, uSl, smDec, dS, dL, sgnS } = unitLabels(inp.unit);
   const { tol, hflip } = inp;
   const tolCell = (key: TolKey, autoVal: number, isAng: boolean) => tol?.[key] != null ? tol[key] : (isAng ? autoVal : dS(autoVal));
-  const setTol = (key: TolKey, v: string) => set({ tol: { ...(tol || {}), [key]: v } });
+  const setTol = (key: TolKey, v: string) => set({ tol: { ...(tol || {}), [key]: v }, tolSource: null });
+  // the preset whose values the job currently holds (typing in a cell makes it "custom")
+  const activePreset = tol && inp.tolSource ? J.presets.find((p) => p.name === inp.tolSource && overrideMatches(tol, p, inp.unit)) ?? null : null;
+  // a picked preset carries over to the new units; hand-typed limits reset to speed-based
+  const switchUnit = (target: Unit) => J.update((j) => {
+    const next = convertInputs(j.inputs, target);
+    return { ...j, inputs: activePreset && target !== j.inputs.unit
+      ? { ...next, tol: presetToOverride(activePreset, target), tolSource: activePreset.name } : next };
+  });
+  const onPickPreset = (id: string) => {
+    if (id === "") return set({ tol: null, tolSource: null });
+    const p = J.presets.find((x) => x.id === id);
+    if (p) set({ tol: presetToOverride(p, inp.unit), tolSource: p.name });
+  };
+  const onSavePreset = async () => {
+    const problem = presetProblem(lim);
+    if (problem) return say(problem, true);
+    const name = window.prompt("Name for these limits (e.g. \"Site spec — compressors\" or an OEM model):", "")?.trim();
+    if (!name) return;
+    const existing = J.presets.find((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (existing && !window.confirm(`Replace the existing preset "${existing.name}"?`)) return;
+    const p = { ...createPreset(name, lim), ...(existing ? { id: existing.id } : {}) };
+    await J.savePreset(p);
+    set({ tol: presetToOverride(p, inp.unit), tolSource: p.name });
+    say(`Saved preset "${p.name}". Pick it under "Limits from" on any job.`);
+  };
+  const onDeletePreset = async (p: TolPreset) => {
+    if (!window.confirm(`Delete the preset "${p.name}"? Jobs already using it keep their limits.`)) return;
+    await J.removePreset(p.id);
+    set({ tolSource: null });
+  };
   const gV = gapReadout(R.rGapV, "vertical", inp.unit), gH = gapReadout(R.rGapH, "horizontal", inp.unit);
   const cb = footCallouts(inp.unit, hflip);
 
   /* ---- job actions ---- */
-  const exportJobs = (jobs: Job[]) => {
-    downloadText(serializeJobs(jobs), exportFileName(jobs));
+  const exportJobs = (jobs: Job[], withPresets = false) => {
+    downloadText(serializeJobs(jobs, withPresets ? J.presets : []), exportFileName(jobs));
     say(`Downloaded ${jobs.length === 1 ? "this job" : `${jobs.length} jobs`} — check your Downloads folder.`);
   };
   const onImportFile = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const { jobs, skipped } = parseJobFile(await file.text());
-      const p = await J.importJobs(jobs);
+      const { jobs, presets, skipped } = parseJobFile(await file.text());
+      const { jobs: p, presets: pp } = await J.importJobs(jobs, presets);
       const parts = [p.added && `${p.added} added`, p.updated && `${p.updated} updated`, p.unchanged && `${p.unchanged} already up to date`,
+        (pp.added + pp.updated) && `${pp.added + pp.updated} tolerance preset${pp.added + pp.updated > 1 ? "s" : ""} saved`,
         skipped.length && `${skipped.length} unreadable`].filter(Boolean);
-      say(`Imported ${file.name}: ${parts.join(", ") || "no jobs found"}.`, skipped.length > 0 && p.toSave.length === 0);
+      say(`Imported ${file.name}: ${parts.join(", ") || "no jobs found"}.`, skipped.length > 0 && p.toSave.length === 0 && pp.toSave.length === 0);
       setShowJobs(false);
     } catch (e) {
       say(`Couldn't import ${file.name}: ${(e as Error).message}`, true);
@@ -84,7 +125,7 @@ export default function App() {
     setTimeout(() => window.print(), 50);
   };
   const onNew = async () => { await J.newJob(); setDetailsOpen(true); };
-  const onDuplicate = async () => { await J.duplicate(); setDetailsOpen(true); say("Copied — rename it (e.g. \"as-left\") and enter the new readings."); };
+  const onDuplicate = async () => { await J.duplicate(); setDetailsOpen(true); say("Copied — rename it and enter the new readings."); };
 
   return (
     <>
@@ -123,21 +164,26 @@ export default function App() {
                 <Field label="Coupling → front foot" unit={uLen} value={inp.L1} onChange={(v) => set({ L1: v })} />
                 <Field label="Front → back foot" unit={uLen} value={inp.Ls} onChange={(v) => set({ Ls: v })} />
                 <Field label="DBSE (shaft ends)" unit={uLen} value={inp.dbse} onChange={(v) => set({ dbse: v })} sub="reference only" />
-                <Field label="Speed" unit="rpm" value={inp.rpm} onChange={(v) => set({ rpm: v, tol: null })} />
+                <Field label="Speed" unit="rpm" value={inp.rpm} onChange={(v) => set(activePreset ? { rpm: v } : { rpm: v, tol: null, tolSource: null })} />
                 <div className="sa-derived">back foot @ <b>{fmt(dL(R.l2), met ? 1 : 0)} {uLen}</b> from coupling</div>
               </div>
             </Panel>
 
-            <Panel title="Measured readings" hint="as-found · parallelism = offset, angularity = gap">
-              <Reading label="Vertical parallelism" r={inp.voff} set={(r) => set({ voff: r })} unit={uSm} pos="Movable HIGH" neg="Movable LOW" />
-              <Reading label="Vertical angularity" r={inp.vgap} set={(r) => set({ vgap: r })} unit={uSm + " / dia"} pos="Open at BOTTOM" neg="Open at TOP" />
+            <Panel title="Measured readings" hint={`${onLeft ? "as-left · after the moves" : "as-found · before any moves"} · parallelism = offset, angularity = gap`}
+              right={<div className="sa-scale" role="group" aria-label="readings stage">
+                <button className={!onLeft ? "sa-scale-b on" : "sa-scale-b"} onClick={() => setStage("found")}>AS-FOUND</button>
+                <button className={onLeft ? "sa-scale-b on" : "sa-scale-b"} onClick={() => setStage("left")}>{inp.asLeft ? "AS-LEFT" : "+ AS-LEFT"}</button>
+              </div>}>
+              <Reading label="Vertical parallelism" r={rs.voff} set={setReading("voff")} unit={uSm} pos="Movable HIGH" neg="Movable LOW" />
+              <Reading label="Vertical angularity" r={rs.vgap} set={setReading("vgap")} unit={uSm + " / dia"} pos="Open at BOTTOM" neg="Open at TOP" />
               <div className="sa-sep" />
-              <Reading label="Horizontal parallelism" r={inp.hoff} set={(r) => set({ hoff: r })} unit={uSm} pos="Movable RIGHT" neg="Movable LEFT" />
-              <Reading label="Horizontal angularity" r={inp.hgap} set={(r) => set({ hgap: r })} unit={uSm + " / dia"} pos="Open at LEFT" neg="Open at RIGHT" />
+              <Reading label="Horizontal parallelism" r={rs.hoff} set={setReading("hoff")} unit={uSm} pos="Movable RIGHT" neg="Movable LEFT" />
+              <Reading label="Horizontal angularity" r={rs.hgap} set={setReading("hgap")} unit={uSm + " / dia"} pos="Open at LEFT" neg="Open at RIGHT" />
               <label className="sa-check">
                 <input type="checkbox" checked={hflip} onChange={(e) => set({ hflip: e.target.checked })} />
                 <span>Reverse horizontal convention (viewpoint flipped)</span>
               </label>
+              {onLeft && <button className="sa-linkbtn" onClick={clearAsLeft}>Remove as-left readings</button>}
             </Panel>
 
             <Panel title="Targets" hint={inp.showTargets ? "cold offsets for thermal growth" : "aligning to zero"}
@@ -156,8 +202,16 @@ export default function App() {
               )}
             </Panel>
 
-            <Panel title="Tolerance limits" hint={`speed-based · ${fmt(num(inp.rpm), 0)} rpm`}
-              right={tol ? <button className="sa-toggle-btn" onClick={() => set({ tol: null })}>Reset to speed</button> : null}>
+            <Panel title="Tolerance limits" hint={!tol ? `speed-based · ${fmt(num(inp.rpm), 0)} rpm` : activePreset ? `preset · ${activePreset.name}` : "custom limits"}
+              right={tol ? <button className="sa-toggle-btn" onClick={() => set({ tol: null, tolSource: null })}>Reset to speed</button> : null}>
+              <label className="sa-fld sa-preset">
+                <span className="sa-fld-l">Limits from</span>
+                <select value={!tol ? "" : activePreset ? activePreset.id : "custom"} onChange={(e) => onPickPreset(e.target.value)}>
+                  <option value="">Speed-based — general guidance</option>
+                  {J.presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {tol && !activePreset && <option value="custom">Custom (typed below)</option>}
+                </select>
+              </label>
               <div className="sa-tolgrid">
                 <div className="sa-tolhead" />
                 <div className="sa-tolhead" style={{ color: C.ok }}>EXCELLENT</div>
@@ -169,7 +223,12 @@ export default function App() {
                 <TolCell v={tolCell("ea", auto.ea, true)} onChange={(v) => setTol("ea", v)} />
                 <TolCell v={tolCell("aa", auto.aa, true)} onChange={(v) => setTol("aa", v)} />
               </div>
-              <div className="sa-emptyhint">General field guidance for pumps/motors. Override with your OEM / site spec.</div>
+              <div className="sa-preset-actions">
+                <button className="sa-toggle-btn" onClick={onSavePreset}>{activePreset ? "Save as new preset" : "Save as preset"}</button>
+                {activePreset && <button className="sa-toggle-btn" onClick={() => onDeletePreset(activePreset)}>Delete preset</button>}
+              </div>
+              <div className="sa-emptyhint">Speed-based values are general field guidance for pumps/motors. Type your OEM / site spec
+                into the cells and save it as a preset to reuse it on other jobs.</div>
             </Panel>
           </section>
 
@@ -178,7 +237,7 @@ export default function App() {
             <div className="sa-status" style={{ borderColor: gColor[overall], boxShadow: `0 0 0 1px ${gColor[overall]}22, 0 0 24px ${gColor[overall]}18` }}>
               <div className="sa-status-dot" style={{ background: gColor[overall], boxShadow: `0 0 10px ${gColor[overall]}` }} />
               <div>
-                <div className="sa-status-k">Residual vs target</div>
+                <div className="sa-status-k">{stageName} · residual vs target</div>
                 <div className="sa-status-v" style={{ color: gColor[overall] }}>{gLabel[overall]}</div>
               </div>
             </div>
@@ -195,7 +254,7 @@ export default function App() {
               <div className="sa-view-note">Scale toggle top-right: <b>EXAG</b> magnifies for readability; <b>1:1</b> shows true geometry (small misalignment looks nearly flat — that’s real). True numbers are in the callouts &amp; foot table.</div>
             </Panel>
 
-            <Panel title="Foot corrections" hint={`${meta.movable} (movable) · to reach target`}>
+            <Panel title="Foot corrections" hint={`${meta.movable} (movable) · from ${stageName} readings · to reach target`}>
               <div className="sa-foot">
                 <div className="sa-foot-h"><span>Foot</span><span>Vertical (shims)</span><span>Horizontal (move)</span></div>
                 <FootRow name="Front" dist={dL(R.l1)} du={uLen} um={uSm} eps={unitLabels(inp.unit).eps} v={dS(R.feet.frontV)} h={dS(R.feet.frontH)} />
@@ -227,7 +286,7 @@ export default function App() {
         {showJobs && (
           <JobsDialog jobs={J.jobs} currentId={job.id}
             onOpen={(id) => { void J.open(id); setShowJobs(false); }} onDelete={onDelete}
-            onExportAll={() => exportJobs(J.jobs)} onImport={() => fileInput.current?.click()} onClose={() => setShowJobs(false)} />
+            onExportAll={() => exportJobs(J.jobs, true)} onImport={() => fileInput.current?.click()} onClose={() => setShowJobs(false)} />
         )}
       </div>
       <Report job={job} printedAt={printedAt} />

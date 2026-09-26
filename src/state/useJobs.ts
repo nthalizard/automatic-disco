@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { planImport, type MergePlan } from "./exchange";
+import { planImport, readJob, type MergePlan } from "./exchange";
 import { blankInputs, createJob, duplicateJob, exampleInputs, exampleMeta, type Job } from "./job";
+import { sortPresets, type TolPreset } from "./presets";
 import { getLastJobId, openJobStore, setLastJobId, sortJobs, type JobStore } from "./storage";
 
 export type SaveState = "saved" | "saving" | "error";
@@ -8,18 +9,23 @@ export type SaveState = "saved" | "saving" | "error";
 const SAVE_DELAY_MS = 400;
 
 // Shared across mounts so a double-mounted effect (React StrictMode) can't seed the example twice.
-let initial: Promise<{ s: JobStore; list: Job[] }> | null = null;
+let initial: Promise<{ s: JobStore; list: Job[]; presets: TolPreset[] }> | null = null;
 function loadOnce() {
   initial ??= (async () => {
     const s = await openJobStore();
     let list: Job[] = [];
-    try { list = await s.list(); } catch { /* treat as empty */ }
+    try {
+      // jobs saved by an older version get any new fields filled in
+      list = (await s.list()).map((j) => readJob(j)).filter((j): j is Job => j !== null);
+    } catch { /* treat as empty */ }
     if (list.length === 0) {
       const ex = createJob(exampleMeta(), exampleInputs());
       try { await s.put(ex); } catch { /* shown via saveState on next edit */ }
       list = [ex];
     }
-    return { s, list };
+    let presets: TolPreset[] = [];
+    try { presets = await s.listPresets(); } catch { /* none */ }
+    return { s, list, presets };
   })();
   return initial;
 }
@@ -30,6 +36,9 @@ export function useJobs() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [presets, setPresets] = useState<TolPreset[]>([]);
+  const presetsRef = useRef<TolPreset[]>([]);
+  const commitPresets = (next: TolPreset[]) => { presetsRef.current = sortPresets(next); setPresets(presetsRef.current); };
 
   // mirrors of state for use inside async callbacks
   const jobsRef = useRef<Job[]>([]);
@@ -64,8 +73,9 @@ export function useJobs() {
   // open storage once; seed the example job on first run
   useEffect(() => {
     let alive = true;
-    loadOnce().then(({ s, list }) => {
+    loadOnce().then(({ s, list, presets }) => {
       if (!alive) return;
+      commitPresets(presets);
       storeRef.current = s;
       setStore(s);
       const sorted = sortJobs(list);
@@ -98,14 +108,15 @@ export function useJobs() {
     queueSave(next);
   }, [currentId, queueSave]);
 
+  // Switch right away (pending saves are per job, so nothing is lost); waiting for the write
+  // first would let edits made in that gap land on the previous job.
   const add = useCallback(async (j: Job) => {
-    await flush();
     commitJobs([j, ...jobsRef.current]);
     setCurrentId(j.id);
     queueSave(j);
-  }, [flush, queueSave]);
+  }, [queueSave]);
 
-  const open = useCallback(async (id: string) => { await flush(); setCurrentId(id); }, [flush]);
+  const open = useCallback(async (id: string) => { setCurrentId(id); void flush(); }, [flush]);
 
   const newJob = useCallback(() => {
     const unit = jobsRef.current.find((j) => j.id === currentId)?.inputs.unit ?? "imp";
@@ -133,21 +144,37 @@ export function useJobs() {
     if (id === currentId) setCurrentId(sortJobs(rest)[0].id);
   }, [currentId, flush, queueSave]);
 
-  const importJobs = useCallback(async (incoming: Job[]): Promise<MergePlan> => {
+  const savePreset = useCallback(async (p: TolPreset) => {
+    await storeRef.current?.putPreset(p);
+    commitPresets([...presetsRef.current.filter((x) => x.id !== p.id), p]);
+  }, []);
+
+  const removePreset = useCallback(async (id: string) => {
+    await storeRef.current?.removePreset(id);
+    commitPresets(presetsRef.current.filter((x) => x.id !== id));
+  }, []);
+
+  const importJobs = useCallback(async (incoming: Job[], incomingPresets: TolPreset[] = []): Promise<{ jobs: MergePlan; presets: MergePlan<TolPreset> }> => {
     await flush();
+    const pPlan = planImport(presetsRef.current, incomingPresets);
+    for (const p of pPlan.toSave) await storeRef.current?.putPreset(p);
+    const pById = new Map(presetsRef.current.map((p) => [p.id, p]));
+    for (const p of pPlan.toSave) pById.set(p.id, p);
+    commitPresets([...pById.values()]);
+
     const plan = planImport(jobsRef.current, incoming);
     for (const j of plan.toSave) await storeRef.current?.put(j);
     const byId = new Map(jobsRef.current.map((j) => [j.id, j]));
     for (const j of plan.toSave) byId.set(j.id, j);
     commitJobs(sortJobs([...byId.values()]));
     if (plan.toSave.length === 1) setCurrentId(plan.toSave[0].id);
-    return plan;
+    return { jobs: plan, presets: pPlan };
   }, [flush]);
 
   return {
     ready: store !== null,
     persistent: store?.persistent ?? true,
-    jobs, job, saveState,
-    update, open, newJob, duplicate, remove, importJobs,
+    jobs, job, saveState, presets,
+    update, open, newJob, duplicate, remove, importJobs, savePreset, removePreset,
   };
 }

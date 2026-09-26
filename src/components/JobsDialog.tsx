@@ -29,7 +29,7 @@ export function JobsDialog({ jobs, currentId, onOpen, onDelete, onExportAll, onI
         </div>
         <ul className="sa-joblist">
           {sortJobs(jobs).map((j) => {
-            const g = evaluate(j.inputs).overall;
+            const g = evaluate(j.inputs, j.inputs.asLeft ? "left" : "found").overall;
             return (
               <li key={j.id} className={j.id === currentId ? "on" : ""}>
                 <button className="sa-joblist-open" onClick={() => onOpen(j.id)}>
@@ -37,7 +37,7 @@ export function JobsDialog({ jobs, currentId, onOpen, onDelete, onExportAll, onI
                   <span className="sa-joblist-txt">
                     <b>{j.meta.name || "Untitled job"}</b>
                     <em>{[`${j.meta.movable} → ${j.meta.stationary}`, j.meta.site].filter(Boolean).join(" · ")}</em>
-                    <em>edited {when(j.updatedAt)}</em>
+                    <em>{j.inputs.asLeft ? "as-left recorded · " : ""}edited {when(j.updatedAt)}</em>
                   </span>
                 </button>
                 <button className="sa-joblist-del" onClick={() => onDelete(j)} aria-label={`Delete ${j.meta.name || "job"}`}>Delete</button>

@@ -1,15 +1,17 @@
 /*  Export / import of jobs as JSON files.
-    File shape: { format: "shaft-alignment-jobs", version: 1, exportedAt, jobs: Job[] }.
+    File shape: { format: "shaft-alignment-jobs", version: 1, exportedAt, jobs: Job[], presets?: TolPreset[] }.
     Import is defensive: unknown fields are dropped, missing ones take blank defaults, and a
     job that can't be read is skipped with a reason rather than failing the whole file. */
 
-import { blankInputs, blankMeta, newId, type Job, type JobInputs, type JobMeta, type SignedReading } from "./job";
+import type { TolPreset } from "./presets";
+import { blankInputs, blankMeta, newId, type Job, type JobInputs, type JobMeta, type ReadingSet, type SignedReading } from "./job";
 
 export const FILE_FORMAT = "shaft-alignment-jobs";
 export const FILE_VERSION = 1;
 
-export function serializeJobs(jobs: Job[], now = new Date()): string {
-  return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, exportedAt: now.toISOString(), jobs }, null, 2);
+export function serializeJobs(jobs: Job[], presets: TolPreset[] = [], now = new Date()): string {
+  const file = { format: FILE_FORMAT, version: FILE_VERSION, exportedAt: now.toISOString(), jobs, ...(presets.length ? { presets } : {}) };
+  return JSON.stringify(file, null, 2);
 }
 
 type Obj = Record<string, unknown>;
@@ -20,6 +22,12 @@ const isoDate = (v: unknown, d: string) => (typeof v === "string" && !isNaN(Date
 
 function reading(v: unknown, d: SignedReading): SignedReading {
   return isObj(v) ? { mag: str(v.mag, d.mag), pos: bool(v.pos, d.pos) } : d;
+}
+
+function readSet(v: unknown): ReadingSet | null {
+  if (!isObj(v)) return null;
+  const z = { mag: "0", pos: true };
+  return { voff: reading(v.voff, z), vgap: reading(v.vgap, z), hoff: reading(v.hoff, z), hgap: reading(v.hgap, z) };
 }
 
 function readInputs(v: unknown): JobInputs {
@@ -37,6 +45,9 @@ function readInputs(v: unknown): JobInputs {
     hflip: bool(v.hflip, d.hflip), showTargets: bool(v.showTargets, d.showTargets),
     tvoff: reading(v.tvoff, d.tvoff), tvgap: reading(v.tvgap, d.tvgap), thoff: reading(v.thoff, d.thoff), thgap: reading(v.thgap, d.thgap),
     tol,
+    tolSource: tol && typeof v.tolSource === "string" ? v.tolSource : null,
+    asLeft: readSet(v.asLeft),
+    stage: v.stage === "left" && isObj(v.asLeft) ? "left" : "found",
   };
 }
 
@@ -49,7 +60,28 @@ function readMeta(v: unknown): JobMeta {
   };
 }
 
-export interface ParseResult { jobs: Job[]; skipped: string[] }
+/** Normalize one stored or imported job onto the current shape; null if it has no inputs. */
+export function readJob(raw: unknown, fallbackDate = new Date().toISOString()): Job | null {
+  if (!isObj(raw) || !isObj(raw.inputs)) return null;
+  const createdAt = isoDate(raw.createdAt, fallbackDate);
+  return {
+    id: typeof raw.id === "string" && raw.id ? raw.id : newId(),
+    createdAt,
+    updatedAt: isoDate(raw.updatedAt, createdAt),
+    meta: readMeta(raw.meta),
+    inputs: readInputs(raw.inputs),
+  };
+}
+
+function readPreset(v: unknown, fallbackDate: string): TolPreset | null {
+  if (!isObj(v) || typeof v.name !== "string" || !v.name.trim()) return null;
+  const n = (x: unknown) => (typeof x === "number" && isFinite(x) && x > 0 ? x : NaN);
+  const p = { eo: n(v.eo), ao: n(v.ao), ea: n(v.ea), aa: n(v.aa) };
+  if (Object.values(p).some(isNaN)) return null;
+  return { id: typeof v.id === "string" && v.id ? v.id : newId(), name: v.name.trim(), ...p, updatedAt: isoDate(v.updatedAt, fallbackDate) };
+}
+
+export interface ParseResult { jobs: Job[]; presets: TolPreset[]; skipped: string[] }
 
 /** Read an exported file. Throws only if the file isn't a job export at all. */
 export function parseJobFile(text: string, now = new Date()): ParseResult {
@@ -68,25 +100,25 @@ export function parseJobFile(text: string, now = new Date()): ParseResult {
   const jobs: Job[] = [];
   const skipped: string[] = [];
   list.forEach((raw, i) => {
-    if (!isObj(raw) || !isObj(raw.inputs)) { skipped.push(`Entry ${i + 1}: no readings`); return; }
-    const createdAt = isoDate(raw.createdAt, t);
-    jobs.push({
-      id: typeof raw.id === "string" && raw.id ? raw.id : newId(),
-      createdAt,
-      updatedAt: isoDate(raw.updatedAt, createdAt),
-      meta: readMeta(raw.meta),
-      inputs: readInputs(raw.inputs),
-    });
+    const j = readJob(raw, t);
+    if (j) jobs.push(j); else skipped.push(`Entry ${i + 1}: no readings`);
   });
-  return { jobs, skipped };
+  const presets: TolPreset[] = [];
+  if (isObj(data) && Array.isArray(data.presets)) {
+    data.presets.forEach((raw, i) => {
+      const p = readPreset(raw, t);
+      if (p) presets.push(p); else skipped.push(`Preset ${i + 1}: invalid limits`);
+    });
+  }
+  return { jobs, presets, skipped };
 }
 
-export interface MergePlan { toSave: Job[]; added: number; updated: number; unchanged: number }
+export interface MergePlan<T = Job> { toSave: T[]; added: number; updated: number; unchanged: number }
 
 /** New ids are added; an existing id is replaced only if the imported copy was edited more recently. */
-export function planImport(existing: Job[], incoming: Job[]): MergePlan {
+export function planImport<T extends { id: string; updatedAt: string }>(existing: T[], incoming: T[]): MergePlan<T> {
   const byId = new Map(existing.map((j) => [j.id, j]));
-  const plan: MergePlan = { toSave: [], added: 0, updated: 0, unchanged: 0 };
+  const plan: MergePlan<T> = { toSave: [], added: 0, updated: 0, unchanged: 0 };
   for (const j of incoming) {
     const cur = byId.get(j.id);
     if (!cur) { plan.toSave.push(j); plan.added++; }

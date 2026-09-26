@@ -5,7 +5,8 @@ import { computeAlignment, type AlignmentResult, type PlaneReading } from "../co
 import { fmt, num, sgn } from "../core/format";
 import { grade, interpTol, worstGrade, type Grade, type Tolerances } from "../core/tolerance";
 import { inToLen, lenToIn, smallToThou, thouToSmall, type Unit } from "../core/units";
-import type { JobInputs, SignedReading } from "./job";
+import { overrideToLimits } from "./presets";
+import { readingsFor, type JobInputs, type SignedReading, type Stage } from "./job";
 
 /** Display-unit labels and helpers for one unit system. */
 export function unitLabels(unit: Unit) {
@@ -37,26 +38,23 @@ export interface Evaluation {
   overall: Grade;
 }
 
-export function evaluate(inp: JobInputs): Evaluation {
+/** Results for one stage's readings (defaults to the stage shown on screen). */
+export function evaluate(inp: JobInputs, stage: Stage = inp.stage): Evaluation {
   const { unit, tol } = inp;
+  const m = readingsFor(inp, stage);
   const s = (r: SignedReading) => smallToThou((r.pos ? 1 : -1) * num(r.mag), unit);
   const plane = (off: SignedReading, gap: SignedReading): PlaneReading => ({ offset: s(off), gap: s(gap) });
   const R = computeAlignment({
     couplingDia: lenToIn(num(inp.D), unit),
     frontFoot: lenToIn(num(inp.L1), unit),
     backFoot: lenToIn(num(inp.L1) + num(inp.Ls), unit),
-    measured: { vertical: plane(inp.voff, inp.vgap), horizontal: plane(inp.hoff, inp.hgap) },
+    measured: { vertical: plane(m.voff, m.vgap), horizontal: plane(m.hoff, m.hgap) },
     target: { vertical: plane(inp.tvoff, inp.tvgap), horizontal: plane(inp.thoff, inp.thgap) },
     hflip: inp.hflip,
   });
 
   const auto = interpTol(num(inp.rpm));
-  const lim = {
-    excOff: tol?.eo != null ? smallToThou(num(tol.eo), unit) : auto.eo,
-    accOff: tol?.ao != null ? smallToThou(num(tol.ao), unit) : auto.ao,
-    excAng: tol?.ea != null ? num(tol.ea) : auto.ea,
-    accAng: tol?.aa != null ? num(tol.aa) : auto.aa,
-  };
+  const lim = overrideToLimits(tol, unit, auto);
   const gr = {
     offV: grade(R.rOffV, lim.excOff, lim.accOff), angV: grade(R.rSlopeV, lim.excAng, lim.accAng),
     offH: grade(R.rOffH, lim.excOff, lim.accOff), angH: grade(R.rSlopeH, lim.excAng, lim.accAng),
