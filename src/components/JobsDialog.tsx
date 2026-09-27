@@ -9,10 +9,10 @@ const when = (iso: string) => {
   return isNaN(d.getTime()) ? "" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 };
 
-export function JobsDialog({ jobs, currentId, onOpen, onDelete, onExportAll, onImport, onClose }: {
+export function JobsDialog({ jobs, currentId, onOpen, onDelete, onExportAll, onImport, onClose, onChangePassword }: {
   jobs: Job[]; currentId: string | null;
   onOpen: (id: string) => void; onDelete: (job: Job) => void;
-  onExportAll: () => void; onImport: () => void; onClose: () => void;
+  onExportAll: () => void; onImport: () => void; onClose: () => void; onChangePassword?: () => void;
 }) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -46,8 +46,10 @@ export function JobsDialog({ jobs, currentId, onOpen, onDelete, onExportAll, onI
           })}
         </ul>
         <div className="sa-modal-foot">
-          <span className="sa-emptyhint">Jobs are kept in this browser only. Export regularly to keep a backup file.</span>
+          <span className="sa-emptyhint">Jobs are kept in this browser only{onChangePassword ? ", encrypted with your password" : ""}.
+            Export regularly to keep a backup file (exports are not encrypted — store them somewhere safe).</span>
           <div className="sa-modal-actions">
+            {onChangePassword && <button className="sa-toggle-btn" onClick={onChangePassword}>Change password</button>}
             <button className="sa-toggle-btn" onClick={onImport}>Import file</button>
             <button className="sa-toggle-btn sa-accent" onClick={onExportAll}>Export all</button>
           </div>

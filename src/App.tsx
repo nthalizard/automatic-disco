@@ -3,6 +3,8 @@ import { fmt, num, sgn } from "./core/format";
 import type { TolKey } from "./core/tolerance";
 import type { Unit } from "./core/units";
 import { Centerline } from "./components/Centerline";
+import { ChangePassword } from "./components/ChangePassword";
+import type { Session } from "./components/LockGate";
 import { FootRow } from "./components/FootRow";
 import { gColor, gLabel } from "./components/grades";
 import { Field, Panel, Reading, TolCell } from "./components/inputs";
@@ -22,8 +24,9 @@ import { C } from "./theme";
 /*  Movable machine (MTBM) -> stationary machine.
     Inputs are held as typed text in the display unit; the core math runs in imperial. */
 
-export default function App() {
-  const J = useJobs();
+export default function App({ session }: { session: Session }) {
+  const J = useJobs(session.store);
+  const [showPw, setShowPw] = useState(false);
   const [showJobs, setShowJobs] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [trueScale, setTrueScale] = useState(false);
@@ -124,6 +127,7 @@ export default function App() {
     window.addEventListener("afterprint", restore);
     setTimeout(() => window.print(), 50);
   };
+  const onLock = async () => { await J.flush(); session.lock(); };
   const onNew = async () => { await J.newJob(); setDetailsOpen(true); };
   const onDuplicate = async () => { await J.duplicate(); setDetailsOpen(true); say("Copied — rename it and enter the new readings."); };
 
@@ -134,7 +138,8 @@ export default function App() {
         <header className="sa-head">
           <JobBar name={meta.name} saveState={J.saveState} persistent={J.persistent}
             onJobs={() => setShowJobs(true)} onNew={onNew} onDuplicate={onDuplicate}
-            onExport={() => exportJobs([job])} onImport={() => fileInput.current?.click()} onReport={onReport} />
+            onExport={() => exportJobs([job])} onImport={() => fileInput.current?.click()} onReport={onReport}
+            onLock={session.locked ? onLock : undefined} />
           {notice && <div className={notice.bad ? "sa-notice bad" : "sa-notice"} role="status" onClick={() => setNotice(null)}>{notice.text}</div>}
           <div className="sa-head-row">
             <div>
@@ -286,7 +291,13 @@ export default function App() {
         {showJobs && (
           <JobsDialog jobs={J.jobs} currentId={job.id}
             onOpen={(id) => { void J.open(id); setShowJobs(false); }} onDelete={onDelete}
-            onExportAll={() => exportJobs(J.jobs, true)} onImport={() => fileInput.current?.click()} onClose={() => setShowJobs(false)} />
+            onExportAll={() => exportJobs(J.jobs, true)} onImport={() => fileInput.current?.click()} onClose={() => setShowJobs(false)}
+            onChangePassword={session.locked ? () => { setShowJobs(false); setShowPw(true); } : undefined} />
+        )}
+        {showPw && (
+          <ChangePassword onClose={() => setShowPw(false)}
+            onChange={async (cur, next, again) => { await J.flush(); return session.changePassword(cur, next, again); }}
+            onDone={() => { setShowPw(false); say("Password changed. Use the new one next time you unlock."); }} />
         )}
       </div>
       <Report job={job} printedAt={printedAt} />

@@ -139,6 +139,21 @@ button:focus-visible,input:focus-visible{outline:2px solid ${C.amber};outline-of
 .sa-modal-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:11px 14px;border-top:1px solid ${C.edgeSoft};background:${C.panel2};}
 .sa-modal-actions{display:flex;gap:6px;}
 
+/* ---- password lock ---- */
+.sa-lock{max-width:420px;margin:8vh auto 0;}
+.sa-lock .sa-title{margin-bottom:18px;}
+.sa-lock-form{display:flex;flex-direction:column;gap:12px;}
+.sa-lock-err{font-size:12px;color:${C.bad};}
+.sa-lock-go{background:${C.amber};color:#1a1206;border:none;border-radius:7px;padding:11px;font-size:13px;font-weight:700;letter-spacing:.04em;cursor:pointer;}
+.sa-lock-go:disabled{opacity:.55;cursor:default;}
+.sa-lock-go.danger{background:${C.bad};color:#fff;}
+.sa-lock-notes{margin:4px 0 0;padding-left:18px;font-size:11px;line-height:1.55;color:${C.inkFaint};}
+.sa-lock-notes b{color:${C.inkDim};}
+.sa-lock-p{margin:0;font-size:12px;line-height:1.55;color:${C.inkDim};}
+.sa-pw-eye{background:none;border:none;color:${C.inkFaint};font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.1em;padding:0 10px;cursor:pointer;}
+.sa-pw-eye:hover{color:${C.ink};}
+.sa-lock-form .sa-linkbtn{margin-top:0;align-self:center;}
+
 /* ---- printed report ---- */
 .rp{display:none;}
 @media print{

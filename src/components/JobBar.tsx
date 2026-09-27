@@ -1,14 +1,14 @@
 import type { SaveState } from "../state/useJobs";
 
-export function JobBar({ name, saveState, persistent, onJobs, onNew, onDuplicate, onExport, onImport, onReport }: {
+export function JobBar({ name, saveState, persistent, onJobs, onNew, onDuplicate, onExport, onImport, onReport, onLock }: {
   name: string; saveState: SaveState; persistent: boolean;
   onJobs: () => void; onNew: () => void; onDuplicate: () => void;
-  onExport: () => void; onImport: () => void; onReport: () => void;
+  onExport: () => void; onImport: () => void; onReport: () => void; onLock?: () => void;
 }) {
   const status = !persistent ? { t: "not saved — browser storage off", c: "bad" }
     : saveState === "error" ? { t: "save failed", c: "bad" }
     : saveState === "saving" ? { t: "saving…", c: "dim" }
-    : { t: "saved on this device", c: "dim" };
+    : { t: onLock ? "saved on this device · encrypted" : "saved on this device", c: "dim" };
   return (
     <div className="sa-jobbar">
       <button className="sa-jobbar-name" onClick={onJobs} title="Open saved jobs">
@@ -23,6 +23,7 @@ export function JobBar({ name, saveState, persistent, onJobs, onNew, onDuplicate
         <button className="sa-toggle-btn" onClick={onExport} title="Download this job as a .json file">Export</button>
         <button className="sa-toggle-btn" onClick={onImport} title="Load jobs from a .json file">Import</button>
         <button className="sa-toggle-btn sa-accent" onClick={onReport} title="Print or save as PDF">Report</button>
+        {onLock && <button className="sa-toggle-btn" onClick={onLock} title="Lock now — the password is needed to reopen">Lock</button>}
       </div>
     </div>
   );

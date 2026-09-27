@@ -19,6 +19,16 @@ speed-based tolerance check.
   it from the browser (Chrome/Edge: install icon in the address bar; iPhone Safari:
   Share → Add to Home Screen; Android Chrome: menu → Install app).
 
+- **Password lock** — on first open you set a password (10+ characters; a few random words
+  works well). Jobs and presets are encrypted on the device with it (AES-GCM, key from
+  PBKDF2-SHA-256 × 600k), so they're unreadable without it — even to someone who reads this
+  public code or copies the browser's storage. **Lock** locks now; the app also locks after
+  10 minutes in the background. Change the password from the jobs list. **There is no
+  recovery**: a forgotten password can only be cleared by erasing the jobs on that device —
+  keep **Export all** backups (export files are *not* encrypted; store them safely).
+  The lock protects your saved data, not the public page itself: anyone can load the empty
+  calculator.
+
 > Jobs live in *this browser's* storage — not synced between devices, and cleared if you
 > clear site data. Use **Export all** regularly to keep a backup file.
 

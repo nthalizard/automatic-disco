@@ -2,37 +2,42 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { planImport, readJob, type MergePlan } from "./exchange";
 import { blankInputs, createJob, duplicateJob, exampleInputs, exampleMeta, type Job } from "./job";
 import { sortPresets, type TolPreset } from "./presets";
-import { getLastJobId, openJobStore, setLastJobId, sortJobs, type JobStore } from "./storage";
+import { getLastJobId, setLastJobId, sortJobs, type JobStore } from "./storage";
 
 export type SaveState = "saved" | "saving" | "error";
 
 const SAVE_DELAY_MS = 400;
 
-// Shared across mounts so a double-mounted effect (React StrictMode) can't seed the example twice.
-let initial: Promise<{ s: JobStore; list: Job[]; presets: TolPreset[] }> | null = null;
-function loadOnce() {
-  initial ??= (async () => {
-    const s = await openJobStore();
-    let list: Job[] = [];
-    try {
-      // jobs saved by an older version get any new fields filled in
-      list = (await s.list()).map((j) => readJob(j)).filter((j): j is Job => j !== null);
-    } catch { /* treat as empty */ }
-    if (list.length === 0) {
-      const ex = createJob(exampleMeta(), exampleInputs());
-      try { await s.put(ex); } catch { /* shown via saveState on next edit */ }
-      list = [ex];
-    }
-    let presets: TolPreset[] = [];
-    try { presets = await s.listPresets(); } catch { /* none */ }
-    return { s, list, presets };
-  })();
-  return initial;
+// One load per store, shared across mounts so a double-mounted effect (React StrictMode)
+// can't seed the example twice.
+const loads = new WeakMap<JobStore, Promise<{ list: Job[]; presets: TolPreset[] }>>();
+function loadOnce(s: JobStore) {
+  let p = loads.get(s);
+  if (!p) {
+    p = load(s);
+    loads.set(s, p);
+  }
+  return p;
+}
+async function load(s: JobStore) {
+  let list: Job[] = [];
+  try {
+    // jobs saved by an older version get any new fields filled in
+    list = (await s.list()).map((j) => readJob(j)).filter((j): j is Job => j !== null);
+  } catch { /* treat as empty */ }
+  if (list.length === 0) {
+    const ex = createJob(exampleMeta(), exampleInputs());
+    try { await s.put(ex); } catch { /* shown via saveState on next edit */ }
+    list = [ex];
+  }
+  let presets: TolPreset[] = [];
+  try { presets = await s.listPresets(); } catch { /* none */ }
+  return { list, presets };
 }
 
-/** Jobs list + the open job, auto-saved to browser storage shortly after each edit. */
-export function useJobs() {
-  const [store, setStore] = useState<JobStore | null>(null);
+/** Jobs list + the open job, auto-saved to `store` shortly after each edit. */
+export function useJobs(store: JobStore) {
+  const [ready, setReady] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -42,7 +47,7 @@ export function useJobs() {
 
   // mirrors of state for use inside async callbacks
   const jobsRef = useRef<Job[]>([]);
-  const storeRef = useRef<JobStore | null>(null);
+  const storeRef = useRef<JobStore>(store);
   const pending = useRef(new Map<string, Job>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -73,18 +78,18 @@ export function useJobs() {
   // open storage once; seed the example job on first run
   useEffect(() => {
     let alive = true;
-    loadOnce().then(({ s, list, presets }) => {
+    storeRef.current = store;
+    loadOnce(store).then(({ list, presets }) => {
       if (!alive) return;
       commitPresets(presets);
-      storeRef.current = s;
-      setStore(s);
+      setReady(true);
       const sorted = sortJobs(list);
       commitJobs(sorted);
       const last = getLastJobId();
       setCurrentId(sorted.some((j) => j.id === last) ? last : sorted[0].id);
     });
     return () => { alive = false; };
-  }, []);
+  }, [store]);
 
   // don't lose the last keystrokes when the tab is hidden or closed
   useEffect(() => {
@@ -172,9 +177,9 @@ export function useJobs() {
   }, [flush]);
 
   return {
-    ready: store !== null,
-    persistent: store?.persistent ?? true,
+    ready,
+    persistent: store.persistent,
     jobs, job, saveState, presets,
-    update, open, newJob, duplicate, remove, importJobs, savePreset, removePreset,
+    update, open, newJob, duplicate, remove, importJobs, savePreset, removePreset, flush,
   };
 }
