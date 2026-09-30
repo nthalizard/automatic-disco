@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gantt Chart</title>
+    <link rel="icon" href="assets/icon-32.png" type="image/png" />
+    <link rel="stylesheet" href="taskpane.css" />
+    <!-- Office.js: in Excel it connects to the workbook; in a normal browser the page runs as a demo. -->
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script type="module" src="taskpane.js"></script>
+  </head>
+  <body>
+    <header class="toolbar" role="toolbar" aria-label="Gantt chart">
+      <button id="btn-refresh" title="Re-read the table and reschedule">⟳<span>Refresh</span></button>
+      <div class="group" role="group" aria-label="Zoom">
+        <button id="btn-zoom-out" title="Zoom out (Ctrl + scroll)">−</button>
+        <button id="btn-fit" title="Fit whole plan">Fit</button>
+        <button id="btn-zoom-in" title="Zoom in (Ctrl + scroll)">+</button>
+      </div>
+      <button id="btn-critical" aria-pressed="false" title="Highlight the critical path">Critical</button>
+      <button id="btn-links" aria-pressed="true" title="Show dependency arrows">Links</button>
+      <button id="btn-undo" title="Undo last change made here (Ctrl+Z)" disabled>↶<span>Undo</span></button>
+      <span class="spacer"></span>
+      <button id="btn-more" aria-haspopup="menu" aria-expanded="false" title="More">⋯</button>
+      <div id="menu" class="menu" role="menu" hidden>
+        <button role="menuitem" id="mi-sequential">Link all tasks in order</button>
+        <button role="menuitem" id="mi-snapshot">Insert chart picture</button>
+        <button role="menuitem" id="mi-sample">Create sample sheet</button>
+        <button role="menuitem" id="mi-blank">Create blank task sheet</button>
+        <button role="menuitem" id="mi-settings">Project settings…</button>
+        <button role="menuitem" id="mi-help">How it works</button>
+      </div>
+    </header>
+
+    <div id="status" class="status" aria-live="polite"></div>
+
+    <main id="chart" class="gantt" tabindex="-1"></main>
+
+    <section id="empty" class="empty" hidden>
+      <h2>No task table found</h2>
+      <p>
+        The chart reads an Excel table named <b>GanttTasks</b> (or any table with <b>Task</b> and
+        <b>Duration</b> columns).
+      </p>
+      <div class="empty-actions">
+        <button class="primary" id="btn-empty-sample">Create sample sheet</button>
+        <button id="btn-empty-blank">Create blank task sheet</button>
+      </div>
+    </section>
+
+    <section id="details" class="details" hidden aria-label="Selected task"></section>
+
+    <dialog id="settings">
+      <form method="dialog" id="settings-form">
+        <h2>Project settings</h2>
+        <label>Project start <input type="datetime-local" name="projectStart" required /></label>
+        <label>Working hours per day <input type="number" name="hoursPerDay" min="0.5" max="24" step="0.5" required /></label>
+        <label>Shift starts at <input type="time" name="shiftStart" required /></label>
+        <fieldset>
+          <legend>Working days</legend>
+          <div class="days">
+            <label><input type="checkbox" name="wd0" />Sun</label>
+            <label><input type="checkbox" name="wd1" />Mon</label>
+            <label><input type="checkbox" name="wd2" />Tue</label>
+            <label><input type="checkbox" name="wd3" />Wed</label>
+            <label><input type="checkbox" name="wd4" />Thu</label>
+            <label><input type="checkbox" name="wd5" />Fri</label>
+            <label><input type="checkbox" name="wd6" />Sat</label>
+          </div>
+        </fieldset>
+        <p class="hint">24 hours on every day = round-the-clock work (typical for a shutdown).</p>
+        <div class="dialog-actions">
+          <button value="cancel" formnovalidate>Cancel</button>
+          <button value="save" class="primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="help">
+      <form method="dialog">
+        <h2>How it works</h2>
+        <ul>
+          <li><b>Table columns:</b> ID, Task, Level (0 = top, 1 = inside the summary above…), Duration (hrs),
+            Predecessors, Fixed Start, % Complete. Start and Finish are filled in for you.</li>
+          <li><b>Summary rows</b> are rows followed by deeper-level rows; their dates and hours roll up.</li>
+          <li><b>Predecessors:</b> IDs separated by commas. <code>5</code> = after 5 finishes,
+            <code>5SS</code> = start with 5, <code>5FF</code> = finish with 5, <code>5+2h</code> = 2 hours after,
+            <code>5-1d</code> = 1 working day of overlap.</li>
+          <li><b>Drag a bar</b> to move it (sets Fixed Start). <b>Drag its right end</b> to change the hours.
+            <b>Drag the dot</b> after a bar onto another bar to link them.</li>
+          <li>Tap a task to see and edit it; the Excel row is selected too. Edits in Excel update the chart.</li>
+          <li><b>Ctrl + scroll</b> zooms. Drag the edge of the task list to resize it.</li>
+        </ul>
+        <div class="dialog-actions"><button class="primary">Got it</button></div>
+      </form>
+    </dialog>
+
+    <div id="tip" class="tip" role="tooltip" hidden></div>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>

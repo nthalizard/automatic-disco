@@ -26,7 +26,13 @@ export default defineConfig({
           { src: "maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
-      workbox: { globPatterns: ["**/*.{js,css,html,svg,png}"] },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,svg,png}"],
+        // The Excel add-in (public/excel-gantt) is a separate page that Excel loads directly;
+        // keep this app's service worker from caching it or answering its requests.
+        globIgnores: ["excel-gantt/**"],
+        navigateFallbackDenylist: [/\/excel-gantt\//],
+      },
     }),
   ],
   // relative asset paths so the build works on any static host (GitHub Pages, Netlify, a file share)
